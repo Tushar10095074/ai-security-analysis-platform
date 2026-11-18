@@ -22,11 +22,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     max_event_payload_bytes: int = Field(default=262_144, ge=1_024)
     api_key_enabled: bool = False
+    database_path: str = "data/security.db"
 
 
 @lru_cache
-
 def get_settings() -> Settings:
     """Return cached application settings."""
-
     return Settings()

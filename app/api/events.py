@@ -6,21 +6,22 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request, status
 
 from app.core.config import get_settings
+from app.db.database import database
 from app.models.risk_assessment import RiskAssessment, RiskContext
 from app.models.security_event import (
     EventAcceptedResponse,
     SecurityEventCreate,
     SecurityEventRecord,
 )
+from app.repositories.event_repository import EventRepository
+from app.repositories.risk_repository import RiskAssessmentRepository
 from app.services.risk_engine import assess_risk
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/events", tags=["security-events"])
 
-# Temporary in-memory stores for local foundation development only.
-# Replace with durable repository implementations in a later phase.
-_EVENTS: dict[UUID, SecurityEventRecord] = {}
-_RISK_ASSESSMENTS: dict[UUID, RiskAssessment] = {}
+event_repository = EventRepository(database)
+risk_repository = RiskAssessmentRepository(database)
 
 
 @router.post(
@@ -33,7 +34,7 @@ async def submit_event(
     payload: SecurityEventCreate,
     request: Request,
 ) -> EventAcceptedResponse:
-    """Validate and acknowledge an event without invoking cloud services."""
+    """Validate and persist an event without invoking cloud services."""
 
     content_length = request.headers.get("content-length")
     max_bytes = get_settings().max_event_payload_bytes
@@ -44,7 +45,8 @@ async def submit_event(
         )
 
     record = SecurityEventRecord(event=payload)
-    _EVENTS[record.event_id] = record
+    event_repository.save(record)
+
     logger.info(
         "security_event_accepted event_id=%s source=%s event_type=%s severity=%s",
         record.event_id,
@@ -57,9 +59,9 @@ async def submit_event(
 
 @router.get("/{event_id}", response_model=SecurityEventRecord, summary="Get an event")
 async def get_event(event_id: UUID) -> SecurityEventRecord:
-    """Retrieve an event accepted by this local process."""
+    """Retrieve a persisted security event."""
 
-    record = _EVENTS.get(event_id)
+    record = event_repository.get(event_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Event not found")
     return record
@@ -74,14 +76,14 @@ async def analyze_event(
     event_id: UUID,
     context: RiskContext | None = None,
 ) -> RiskAssessment:
-    """Calculate and store a deterministic risk assessment."""
+    """Calculate and persist a deterministic risk assessment."""
 
-    event = _EVENTS.get(event_id)
+    event = event_repository.get(event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
 
     assessment = assess_risk(event, context)
-    _RISK_ASSESSMENTS[event_id] = assessment
+    risk_repository.save(assessment)
 
     logger.info(
         "security_event_analyzed event_id=%s score=%s level=%s",
@@ -98,12 +100,12 @@ async def analyze_event(
     summary="Get event risk assessment",
 )
 async def get_event_risk(event_id: UUID) -> RiskAssessment:
-    """Retrieve the latest risk assessment for an event."""
+    """Retrieve the latest persisted risk assessment."""
 
-    if event_id not in _EVENTS:
+    if event_repository.get(event_id) is None:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    assessment = _RISK_ASSESSMENTS.get(event_id)
+    assessment = risk_repository.get(event_id)
     if assessment is None:
         raise HTTPException(status_code=404, detail="Risk assessment not found")
 

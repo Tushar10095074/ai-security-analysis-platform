@@ -8,13 +8,15 @@ from fastapi import FastAPI
 from app.api import events, health
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.db.database import database
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Initialize application-level facilities."""
+    """Initialize application facilities before accepting requests."""
 
     configure_logging()
+    database.initialize()
     yield
 
 

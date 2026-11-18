@@ -15,7 +15,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080 \
     PYTHONPATH=/app
 WORKDIR /app
-RUN groupadd --system app && useradd --system --gid app --home-dir /app app
+RUN groupadd --system app && useradd --system --gid app --home-dir /app app && \
+    mkdir -p /app/data && chown app:app /app/data
 COPY --from=builder /install /usr/local
 COPY app ./app
 USER app:app

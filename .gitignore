@@ -13,3 +13,8 @@ build/
 .terraform/
 *.tfstate
 *.tfstate.*
+
+# Local SQLite database and backup files
+data/*.db
+data/*.db-*
+data/*.backup

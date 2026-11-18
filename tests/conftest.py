@@ -3,19 +3,15 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.events import _EVENTS, _RISK_ASSESSMENTS
+from app.db.database import database
 from app.main import app
 
 
 @pytest.fixture
-def client() -> TestClient:
-    """Provide an isolated test client and clear temporary stores."""
+def client(tmp_path) -> TestClient:
+    """Provide a test client backed by an isolated temporary SQLite database."""
 
-    _EVENTS.clear()
-    _RISK_ASSESSMENTS.clear()
+    database.set_path(tmp_path / "security-test.db")
 
     with TestClient(app) as test_client:
         yield test_client
-
-    _EVENTS.clear()
-    _RISK_ASSESSMENTS.clear()
