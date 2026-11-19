@@ -85,6 +85,9 @@ def test_vertex_analysis_via_api(client, use_provider):
     assert body["recommended_actions"] == VALID_OUTPUT["recommended_actions"]
     assert any("authoritative" in item for item in body["limitations"])
     assert len(fake.calls) == 1
+    config = fake.calls[0]["config"]
+    assert config.response_mime_type == "application/json"
+    assert config.thinking_config.thinking_budget == 0
 
     # Prompt wraps untrusted event data and carries the deterministic score.
     prompt = fake.calls[0]["contents"]

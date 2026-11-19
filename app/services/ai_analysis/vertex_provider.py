@@ -76,10 +76,12 @@ class VertexAIAnalysisProvider:
         timeout_seconds: int = 30,
         max_output_tokens: int = 2_048,
         max_calls: int = 50,
+        thinking_budget: int | None = 0,
         client: Any | None = None,
     ) -> None:
         self.model = model
         self.max_output_tokens = max_output_tokens
+        self.thinking_budget = thinking_budget
         self.max_calls = max_calls
         self._calls = 0
         self._lock = threading.Lock()
@@ -134,6 +136,11 @@ class VertexAIAnalysisProvider:
                     max_output_tokens=self.max_output_tokens,
                     response_mime_type="application/json",
                     response_schema=VertexAnalysisOutput,
+                    thinking_config=(
+                        types.ThinkingConfig(thinking_budget=self.thinking_budget)
+                        if self.thinking_budget is not None
+                        else None
+                    ),
                 ),
             )
             output = VertexAnalysisOutput.model_validate_json(response.text or "")

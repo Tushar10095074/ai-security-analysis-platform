@@ -20,6 +20,7 @@ def build_ai_analysis_provider(settings: Settings) -> AIAnalysisProvider:
             model=settings.vertex_model,
             timeout_seconds=settings.vertex_timeout_seconds,
             max_output_tokens=settings.vertex_max_output_tokens,
+            thinking_budget=settings.vertex_thinking_budget,
             max_calls=settings.vertex_max_calls_per_instance,
         )
 
