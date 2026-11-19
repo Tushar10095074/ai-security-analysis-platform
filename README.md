@@ -73,10 +73,10 @@ Verified by the automated test suite **and** by a Docker end-to-end run (Tests A
 - Liveness (`/health`) and readiness (`/ready`) endpoints.
 - Docker image running as non-root UID/GID 1000 with a Docker `HEALTHCHECK`.
 - Local quality gates: compileall, Ruff, Pytest, Bandit, and pip-audit.
+- GitHub Actions CI: green on commit `6a53868` (Ruff, `23 passed`, Bandit, pip-audit).
 
 ### Implemented but not yet fully verified
 
-- GitHub Actions CI for the latest changes (persistence, AI analysis, `httpx2`). It must be confirmed green on the latest commit after push.
 - Payload size limit (`MAX_EVENT_PAYLOAD_BYTES`). It is enforced only from the `Content-Length` header and has no dedicated test.
 
 ### Planned (not implemented)
@@ -235,7 +235,7 @@ Last local result: compileall OK, Ruff `All checks passed!`, `23 passed` with no
 
 ## 13. CI workflow
 
-`.github/workflows/ci.yml` runs on every push and pull request to `main`. It uses `ubuntu-latest` with Python 3.14 and read-only `contents` permission, and runs these steps:
+`.github/workflows/ci.yml` runs on every push and pull request to `main`. It uses `ubuntu-latest` with Python 3.14 and read-only `contents` permission, using `actions/checkout@v7` and `actions/setup-python@v7` (Node 24), and runs these steps:
 
 1. Install `requirements-dev.txt`
 2. `ruff check .`
