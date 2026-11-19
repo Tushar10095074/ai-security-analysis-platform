@@ -7,14 +7,17 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from app.core.config import get_settings
 from app.db.database import database
+from app.models.ai_analysis import AIAnalysis
 from app.models.risk_assessment import RiskAssessment, RiskContext
 from app.models.security_event import (
     EventAcceptedResponse,
     SecurityEventCreate,
     SecurityEventRecord,
 )
+from app.repositories.ai_analysis_repository import AIAnalysisRepository
 from app.repositories.event_repository import EventRepository
 from app.repositories.risk_repository import RiskAssessmentRepository
+from app.services.ai_analysis.mock_provider import MockAIAnalysisProvider
 from app.services.risk_engine import assess_risk
 
 logger = logging.getLogger(__name__)
@@ -22,6 +25,8 @@ router = APIRouter(prefix="/api/v1/events", tags=["security-events"])
 
 event_repository = EventRepository(database)
 risk_repository = RiskAssessmentRepository(database)
+ai_analysis_repository = AIAnalysisRepository(database)
+ai_analysis_provider = MockAIAnalysisProvider()
 
 
 @router.post(
@@ -110,3 +115,54 @@ async def get_event_risk(event_id: UUID) -> RiskAssessment:
         raise HTTPException(status_code=404, detail="Risk assessment not found")
 
     return assessment
+
+@router.post(
+    "/{event_id}/ai-analysis",
+    response_model=AIAnalysis,
+    summary="Generate explanatory AI analysis",
+)
+async def analyze_event_with_ai(event_id: UUID) -> AIAnalysis:
+    """Generate and persist explanatory analysis using the local mock provider."""
+
+    event = event_repository.get(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    assessment = risk_repository.get(event_id)
+    if assessment is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Risk assessment not found",
+        )
+
+    analysis = ai_analysis_provider.analyze(event, assessment)
+    ai_analysis_repository.save(analysis)
+
+    logger.info(
+        "security_event_ai_analyzed event_id=%s provider=%s",
+        event_id,
+        analysis.provider,
+    )
+    return analysis
+
+
+@router.get(
+    "/{event_id}/ai-analysis",
+    response_model=AIAnalysis,
+    summary="Get persisted AI analysis",
+)
+async def get_event_ai_analysis(event_id: UUID) -> AIAnalysis:
+    """Retrieve the latest persisted explanatory analysis."""
+
+    if event_repository.get(event_id) is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    analysis = ai_analysis_repository.get(event_id)
+    if analysis is None:
+        raise HTTPException(
+            status_code=404,
+            detail="AI analysis not found",
+        )
+
+    return analysis
+

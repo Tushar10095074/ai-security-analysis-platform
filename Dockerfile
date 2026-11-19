@@ -15,7 +15,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080 \
     PYTHONPATH=/app
 WORKDIR /app
-RUN groupadd --system app && useradd --system --gid app --home-dir /app app && \
+RUN groupadd --gid 1000 app && \
+    useradd --uid 1000 --gid 1000 --home-dir /app --no-create-home --shell /usr/sbin/nologin app && \
     mkdir -p /app/data && chown app:app /app/data
 COPY --from=builder /install /usr/local
 COPY app ./app

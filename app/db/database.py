@@ -51,6 +51,14 @@ class Database:
                             ON DELETE CASCADE
                     );
 
+                    CREATE TABLE IF NOT EXISTS ai_analyses (
+                        event_id TEXT PRIMARY KEY,
+                        analysis_json TEXT NOT NULL,
+                        FOREIGN KEY (event_id)
+                            REFERENCES security_events(event_id)
+                            ON DELETE CASCADE
+                    );
+
                     CREATE INDEX IF NOT EXISTS idx_events_received_at
                         ON security_events(received_at);
                     """
