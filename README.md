@@ -2,7 +2,7 @@
 
 A reusable, provider-neutral platform that accepts security events from multiple cloud and custom sources, stores them durably, calculates a deterministic and explainable risk score, and produces structured analysis and remediation guidance.
 
-> **POC status:** local MVP only. No cloud resources are provisioned and no real AI model is called. The current "AI analysis" is produced by a **local, deterministic mock provider** (`provider: "mock"`). Vertex AI and live cloud integrations are planned for later phases.
+> **POC status:** deployed as a **private Cloud Run service** in `white-watch-464115-t0` (us-east1) with **Vertex AI Gemini 2.5 Flash** analysis (`provider: "vertex_ai"`). Locally, in tests and in CI the default is a **deterministic mock provider** (`provider: "mock"`) that calls no external service. Live source integrations (SCC, AWS, Azure) are planned for later phases. Full write-up: [docs/deliverables](docs/deliverables/).
 
 ---
 
@@ -19,7 +19,7 @@ Security teams receive large volumes of alerts from GCP, AWS, Azure, and in-hous
 
 ## 2. Architecture
 
-### Current local MVP
+### Current implementation
 
 ```mermaid
 flowchart LR
@@ -27,7 +27,7 @@ flowchart LR
     API --> DB[("SQLite<br/>data/security.db")]
     API -->|POST /analyze| RE[Deterministic risk engine]
     RE --> DB
-    API -->|POST /ai-analysis| AI["MockAIAnalysisProvider<br/>(local, no external calls)"]
+    API -->|POST /ai-analysis| AI["AI provider<br/>mock (default) or Vertex AI Gemini"]
     DB -->|event + stored risk| AI
     AI --> DB
 ```
@@ -56,7 +56,9 @@ Risk scoring and AI analysis are deliberately separate. The deterministic risk s
 | Container | Docker (multi-stage, `python:3.14-slim`, non-root UID/GID 1000) |
 | Quality & security | Ruff, Pytest (+ `httpx2` for Starlette `TestClient`), Bandit, pip-audit |
 | CI | GitHub Actions |
-| Future | Vertex AI, Cloud Run, Security Command Center, AWS/Azure integrations |
+| AI | Vertex AI Gemini 2.5 Flash via `google-genai` (structured JSON output) |
+| Cloud | Cloud Run (private), Artifact Registry, least-privilege service account (us-east1) |
+| Future | Security Command Center, AWS/Azure integrations, managed database |
 
 ## 4. Feature status
 
@@ -68,7 +70,8 @@ Verified by the automated test suite **and** by a Docker end-to-end run (Tests A
 - Normalized event-source values: `security_command_center`, `cloud_logging`, `cloud_monitoring`, `aws_security_hub`, `azure_defender`, `custom`. These are schema values only; there are no live connectors.
 - Event ingestion (HTTP 202) and retrieval.
 - Deterministic, explainable risk scoring (`low` / `medium` / `high` / `critical`) with factors and recommendations.
-- Structured mock AI analysis: summary, threat explanation, potential impact, key observations, recommended actions, investigation steps, and limitations.
+- Structured AI analysis: summary, threat explanation, potential impact, key observations, recommended actions, investigation steps, and limitations. Uses the mock provider locally and Vertex AI Gemini on Cloud Run, with guardrails: untrusted-input framing, schema validation, output clipping, a per-instance call budget (HTTP 429) and fail-closed errors (HTTP 502).
+- Private Cloud Run deployment verified end to end (18/18 checks): unauthenticated requests are rejected with 403, and a real Gemini analysis is returned and stored.
 - SQLite persistence for events, risk assessments, and AI analyses. Data survives a container restart.
 - Liveness (`/health`) and readiness (`/ready`) endpoints.
 - Docker image running as non-root UID/GID 1000 with a Docker `HEALTHCHECK`.
@@ -127,6 +130,14 @@ Settings are read from environment variables or a local `.env` file (never commi
 | `MAX_EVENT_PAYLOAD_BYTES` | `262144` | Maximum accepted request size |
 | `API_KEY_ENABLED` | `false` | Reserved for future use. Authentication is **not** implemented. |
 | `DATABASE_PATH` | `data/security.db` | SQLite file (in Docker: `/app/data/security.db`) |
+| `AI_PROVIDER` | `mock` | `mock` (no external calls) or `vertex` |
+| `VERTEX_PROJECT` | (unset) | GCP project for Vertex AI; required when `AI_PROVIDER=vertex` |
+| `VERTEX_LOCATION` | `us-east1` | Vertex AI region |
+| `VERTEX_MODEL` | `gemini-2.5-flash` | Gemini model ID |
+| `VERTEX_THINKING_BUDGET` | `0` | Thinking tokens (0 = off, lower cost) |
+| `VERTEX_MAX_OUTPUT_TOKENS` | `2048` | Output token cap |
+| `VERTEX_TIMEOUT_SECONDS` | `30` | Request timeout |
+| `VERTEX_MAX_CALLS_PER_INSTANCE` | `50` | Cost guard; further calls return HTTP 429 |
 
 ## 8. Database schema
 
@@ -245,9 +256,27 @@ Last local result: compileall OK, Ruff `All checks passed!`, `23 passed` with no
 
 There is **no** CD pipeline and no cloud deployment.
 
+## Google Cloud deployment (POC)
+
+Created in `white-watch-464115-t0`, us-east1 (the organisation policy allows only us-east1). No APIs were enabled and no existing resources were modified.
+
+| Resource | Name | Notes |
+|---|---|---|
+| Artifact Registry | `ai-security-platform` | Cleanup policy keeps the latest 3 versions |
+| Service account | `ai-security-platform-run` | Only `roles/aiplatform.user`; no keys |
+| Cloud Run | `ai-security-platform` | Private; 0–1 instances; 1 vCPU / 512 MiB; request-based CPU |
+
+```bash
+TOKEN=$(gcloud auth print-identity-token)
+curl -H "Authorization: Bearer $TOKEN" https://ai-security-platform-dtkamn6rva-ue.a.run.app/health
+```
+
+Estimated cost: about $0 when idle, about $0.002 per Gemini analysis, and under $1 per month at POC usage. Deployment, runbook and teardown commands are in [docs/deliverables](docs/deliverables/).
+
 ## 14. Known limitations
 
-- **AI analysis is mocked.** The output is template-based and deterministic, and no LLM or Vertex AI call is made. It must not be treated as independent threat intelligence.
+- **AI output must be validated by an analyst.** Gemini explanations may be incomplete or inaccurate. The deterministic risk score remains authoritative. The local mock provider is template-based.
+- **Data is not durable on Cloud Run.** SQLite lives in the container and is lost when the service scales to zero.
 - **No live cloud integrations.** The source values are schema values only, and events must be pushed to the API.
 - **No authentication or authorization.** `API_KEY_ENABLED` is a placeholder and is not enforced.
 - SQLite is single-node and suits a single container or low concurrency, not horizontal scaling.
@@ -261,7 +290,7 @@ There is **no** CD pipeline and no cloud deployment.
 
 Not started. Each phase requires explicit approval before any cloud resources are created or paid services are used.
 
-1. Real AI analysis using Vertex AI, behind the existing provider interface.
+1. ~~Real AI analysis using Vertex AI~~: done (Gemini 2.5 Flash, POC).
 2. GCP Security Command Center integration.
 3. Cloud Logging and Cloud Monitoring integrations.
 4. AWS Security Hub integration.
@@ -270,10 +299,10 @@ Not started. Each phase requires explicit approval before any cloud resources ar
 7. Audit logging.
 8. Security remediation workflows.
 9. Response automation.
-10. Production-oriented Cloud Run deployment.
+10. Production-oriented Cloud Run deployment (a private POC deployment exists; durable storage, authentication and scaling are still to do).
 11. Scalable event processing (for example, Pub/Sub and a managed database).
 12. End-to-end demonstration.
 
-## Cloud deployment
+## Cloud changes
 
-Not configured and not deployed. Do not run Terraform or create cloud resources until the GCP project, billing, IAM, region, and expected costs have been reviewed and explicitly approved.
+Only the POC resources listed above exist. Any further cloud resources or paid services need explicit approval first.
