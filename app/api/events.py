@@ -17,7 +17,8 @@ from app.models.security_event import (
 from app.repositories.ai_analysis_repository import AIAnalysisRepository
 from app.repositories.event_repository import EventRepository
 from app.repositories.risk_repository import RiskAssessmentRepository
-from app.services.ai_analysis.mock_provider import MockAIAnalysisProvider
+from app.services.ai_analysis.factory import build_ai_analysis_provider
+from app.services.ai_analysis.vertex_provider import AIProviderError, AIQuotaExceededError
 from app.services.risk_engine import assess_risk
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/api/v1/events", tags=["security-events"])
 event_repository = EventRepository(database)
 risk_repository = RiskAssessmentRepository(database)
 ai_analysis_repository = AIAnalysisRepository(database)
-ai_analysis_provider = MockAIAnalysisProvider()
+ai_analysis_provider = build_ai_analysis_provider(get_settings())
 
 
 @router.post(
@@ -121,8 +122,12 @@ async def get_event_risk(event_id: UUID) -> RiskAssessment:
     response_model=AIAnalysis,
     summary="Generate explanatory AI analysis",
 )
-async def analyze_event_with_ai(event_id: UUID) -> AIAnalysis:
-    """Generate and persist explanatory analysis using the local mock provider."""
+def analyze_event_with_ai(event_id: UUID) -> AIAnalysis:
+    """Generate and persist explanatory analysis using the configured provider.
+
+    Declared as a sync endpoint so a slow hosted-model call runs in the threadpool
+    instead of blocking the event loop.
+    """
 
     event = event_repository.get(event_id)
     if event is None:
@@ -135,7 +140,19 @@ async def analyze_event_with_ai(event_id: UUID) -> AIAnalysis:
             detail="Risk assessment not found",
         )
 
-    analysis = ai_analysis_provider.analyze(event, assessment)
+    try:
+        analysis = ai_analysis_provider.analyze(event, assessment)
+    except AIQuotaExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="AI analysis call budget exhausted for this instance",
+        ) from exc
+    except AIProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI analysis provider unavailable",
+        ) from exc
+
     ai_analysis_repository.save(analysis)
 
     logger.info(
@@ -165,4 +182,3 @@ async def get_event_ai_analysis(event_id: UUID) -> AIAnalysis:
         )
 
     return analysis
-

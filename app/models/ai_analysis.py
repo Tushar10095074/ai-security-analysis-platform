@@ -12,7 +12,8 @@ class AIAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_id: str
-    provider: Literal["mock"] = "mock"
+    provider: Literal["mock", "vertex_ai"] = "mock"
+    model: str | None = None
     analysis_version: str = "1.0"
     summary: str = Field(min_length=1, max_length=2000)
     threat_explanation: str = Field(min_length=1, max_length=4000)
