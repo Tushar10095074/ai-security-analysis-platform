@@ -14,8 +14,11 @@ steps:
       architecture: 'x64'
 
   - script: |
-      python -m pip install --upgrade pip
-      python -m pip install -r requirements-dev.txt
+      python -m pip install \
+        --disable-pip-version-check \
+        --retries 10 \
+        --timeout 60 \
+        -r requirements-dev.txt
     displayName: 'Install dependencies'
 
   - script: |
