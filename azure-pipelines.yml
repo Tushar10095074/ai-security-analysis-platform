@@ -13,20 +13,18 @@ steps:
       versionSpec: '3.14'
       architecture: 'x64'
 
-  - script: |
-      echo "===== PYPI CONNECTIVITY CHECK ====="
-      curl -Iv --connect-timeout 20 --max-time 60 https://pypi.org/simple/pip/
-      echo "===== PYPI FILE HOST CHECK ====="
-      curl -Iv --connect-timeout 20 --max-time 60 https://files.pythonhosted.org/
+  - task: PipAuthenticate@1
+    displayName: 'Authenticate Azure Artifacts'
+    inputs:
+      artifactFeeds: 'security-ai-python'
 
-      echo "===== INSTALL DEPENDENCIES ====="
+  - script: |
       python -m pip install \
         --disable-pip-version-check \
         --retries 5 \
         --timeout 120 \
-        --no-cache-dir \
         -r requirements-dev.txt
-    displayName: 'Check PyPI and install dependencies'
+    displayName: 'Install dependencies'
 
   - script: |
       ruff check .
