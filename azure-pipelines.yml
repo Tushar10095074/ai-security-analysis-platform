@@ -14,14 +14,19 @@ steps:
       architecture: 'x64'
 
   - script: |
-      python -m pip install --upgrade pip --retries 15 --timeout 120
+      echo "===== PYPI CONNECTIVITY CHECK ====="
+      curl -Iv --connect-timeout 20 --max-time 60 https://pypi.org/simple/pip/
+      echo "===== PYPI FILE HOST CHECK ====="
+      curl -Iv --connect-timeout 20 --max-time 60 https://files.pythonhosted.org/
+
+      echo "===== INSTALL DEPENDENCIES ====="
       python -m pip install \
         --disable-pip-version-check \
-        --retries 15 \
+        --retries 5 \
         --timeout 120 \
         --no-cache-dir \
         -r requirements-dev.txt
-    displayName: 'Install dependencies'
+    displayName: 'Check PyPI and install dependencies'
 
   - script: |
       ruff check .
