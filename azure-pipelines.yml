@@ -1,4 +1,8 @@
+
 trigger:
+  - main
+
+pr:
   - main
 
 pool:
@@ -13,18 +17,19 @@ steps:
       versionSpec: '3.14'
       architecture: 'x64'
 
-  - task: PipAuthenticate@1
-    displayName: 'Authenticate Azure Artifacts'
-    inputs:
-      artifactFeeds: 'security-ai-python'
-
   - script: |
+      echo "===== CHECK PYPI CONNECTIVITY ====="
+      curl -fIsS --connect-timeout 20 --max-time 60 https://pypi.org/simple/fastapi/
+
+      echo "===== INSTALL DEPENDENCIES FROM PUBLIC PYPI ====="
       python -m pip install \
+        --index-url https://pypi.org/simple \
         --disable-pip-version-check \
         --retries 5 \
         --timeout 120 \
+        --no-cache-dir \
         -r requirements-dev.txt
-    displayName: 'Install dependencies'
+    displayName: 'Install dependencies from public PyPI'
 
   - script: |
       ruff check .
